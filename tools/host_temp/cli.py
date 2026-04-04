@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between temperature updates")
     parser.add_argument(
         "--sensor",
-        help="Optional provider-specific sensor identifier, such as /sys/class/hwmon/hwmon0/temp1_input",
+        help="Optional provider-specific sensor identifier, such as /sys/class/hwmon/hwmon0/temp1_input or cpu_temp_avg",
     )
     parser.add_argument(
         "--librehardwaremonitor-dll",
