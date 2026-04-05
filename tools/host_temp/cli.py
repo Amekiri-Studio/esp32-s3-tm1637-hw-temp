@@ -6,7 +6,7 @@ import time
 
 from .providers import get_provider
 from .providers.base import SensorCandidate
-from .serial_io import open_serial_writer
+from .serial_io import auto_detect_serial_port, list_serial_ports, open_serial_writer
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
         choices=("auto", "linux", "windows", "macos"),
         help="Host platform sensor provider to use",
     )
-    parser.add_argument("--port", default="/dev/ttyACM0", help="Serial port connected to the ESP32-S3")
+    parser.add_argument("--port", help="Serial port connected to the ESP32-S3. Defaults to auto-detection.")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between temperature updates")
     parser.add_argument(
@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
         help="Windows only: path to LibreHardwareMonitorLib.dll. You can also set LIBREHARDWAREMONITOR_DLL.",
     )
     parser.add_argument("--list-sensors", action="store_true", help="Print detected temperature sensors and exit")
+    parser.add_argument("--list-ports", action="store_true", help="Print detected serial ports and exit")
     parser.add_argument("--dry-run", action="store_true", help="Print the detected temperature without opening the serial port")
     return parser.parse_args()
 
@@ -50,8 +51,33 @@ def print_candidates(candidates: list[SensorCandidate]) -> int:
     return 0
 
 
+def print_ports() -> int:
+    ports = list_serial_ports()
+    if not ports:
+        print("No serial ports were found.")
+        return 1
+
+    print("Available serial ports:")
+    for port in ports:
+        details = [port.description]
+        if port.manufacturer:
+            details.append(port.manufacturer)
+        if port.hwid:
+            details.append(port.hwid)
+
+        print(
+            f"  score={port.score:>3}  {port.device:<20}  "
+            f"[{port.detection_method}] {' | '.join(details)}"
+        )
+
+    return 0
+
+
 def main() -> int:
     args = parse_args()
+    if args.list_ports:
+        return print_ports()
+
     provider = get_provider(args.platform, lhm_dll_path=args.librehardwaremonitor_dll)
 
     print(f"Using provider: {provider.platform_name}")
@@ -80,8 +106,14 @@ def main() -> int:
             print("Stopped temperature sender")
             return 0
 
-        with open_serial_writer(args.port, args.baud) as writer:
-            print(f"Opened serial port: {args.port} @ {args.baud} baud")
+        port = args.port or auto_detect_serial_port()
+        if args.port:
+            print(f"Using serial port: {port}")
+        else:
+            print(f"Auto-detected serial port: {port}")
+
+        with open_serial_writer(port, args.baud) as writer:
+            print(f"Opened serial port: {port} @ {args.baud} baud")
             time.sleep(2.0)
 
             while not should_stop:

@@ -24,7 +24,7 @@
 - Linux 温度读取已实现
 - Windows 已接入 `LibreHardwareMonitor`
 - macOS 已接入 Apple Silicon 的 `macmon` CLI
-- 串口发送层是共用的
+- 串口发送层是共用的，并支持自动识别 ESP32-S3 串口
 
 ### 当前平台状态
 
@@ -38,6 +38,12 @@
 python3 tools/send_cpu_temp.py --list-sensors
 ```
 
+### 查看检测到的串口
+
+```bash
+python3 tools/send_cpu_temp.py --list-ports
+```
+
 ### 只在终端打印温度，不发送到串口
 
 ```bash
@@ -47,8 +53,10 @@ python3 tools/send_cpu_temp.py --dry-run
 ### 发送温度到 ESP32-S3
 
 ```bash
-python3 tools/send_cpu_temp.py --port /dev/ttyACM0
+python3 tools/send_cpu_temp.py
 ```
+
+默认会自动识别常见的 ESP32-S3 串口；如果同时存在多个不确定的串口，可以配合 `--list-ports` 查看后手动指定。
 
 ### 指定平台 provider
 
@@ -68,7 +76,9 @@ Windows 端建议准备两样东西：
 ```powershell
 py -m pip install pythonnet pyserial
 py tools/send_cpu_temp.py --platform windows --librehardwaremonitor-dll "C:\path\to\LibreHardwareMonitorLib.dll" --list-sensors
+py tools/send_cpu_temp.py --platform windows --librehardwaremonitor-dll "C:\path\to\LibreHardwareMonitorLib.dll" --list-ports
 py tools/send_cpu_temp.py --platform windows --librehardwaremonitor-dll "C:\path\to\LibreHardwareMonitorLib.dll" --dry-run
+py tools/send_cpu_temp.py --platform windows --librehardwaremonitor-dll "C:\path\to\LibreHardwareMonitorLib.dll"
 py tools/send_cpu_temp.py --platform windows --librehardwaremonitor-dll "C:\path\to\LibreHardwareMonitorLib.dll" --port COM3
 ```
 
@@ -93,7 +103,9 @@ brew install macmon
 
 ```bash
 python3 tools/send_cpu_temp.py --platform macos --list-sensors
+python3 tools/send_cpu_temp.py --platform macos --list-ports
 python3 tools/send_cpu_temp.py --platform macos --dry-run
+python3 tools/send_cpu_temp.py --platform macos
 python3 tools/send_cpu_temp.py --platform macos --port /dev/tty.usbmodem1101
 ```
 
