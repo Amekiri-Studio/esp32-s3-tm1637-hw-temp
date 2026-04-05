@@ -9,6 +9,7 @@
 
 constexpr unsigned long SERIAL_BAUD = 115200;
 constexpr unsigned long DATA_TIMEOUT_MS = 5000;
+constexpr unsigned long DISPLAY_STARTUP_DELAY_MS = 250;
 constexpr size_t SERIAL_BUFFER_SIZE = 32;
 const uint8_t DASH_SEGMENTS[] = {0x40, 0x40, 0x40, 0x40};
 
@@ -67,6 +68,8 @@ void setup() {
     Serial.println("System Initializing...");
     Serial.println("Waiting for host CPU temperature readings over serial...");
 
+    // Some TM1637 boards ignore the first commands after a cold power-on.
+    delay(DISPLAY_STARTUP_DELAY_MS);
     display.setBrightness(0x0f);
     showWaitingPattern();
 }
