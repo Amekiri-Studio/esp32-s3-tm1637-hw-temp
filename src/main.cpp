@@ -153,6 +153,7 @@ void printWiFiHelp() {
     Serial.println("  WIFI PASS <your-password>");
     Serial.println("  WIFI CONNECT");
     Serial.println("  WIFI STATUS");
+    Serial.println("  WIFI LOCK CLEAR");
     Serial.println("  WIFI CLEAR");
     Serial.println("  WIFI HELP");
 }
@@ -422,6 +423,15 @@ void processWiFiCommand(char *commandText) {
 
     if (strcmp(command, "STATUS") == 0) {
         printWiFiStatus();
+        return;
+    }
+
+    if (strcmp(command, "LOCK CLEAR") == 0) {
+        if (hasWiFiOwnerLock) {
+            clearWiFiOwnerLock("manual clear");
+        } else {
+            Serial.println("WiFi sender lock is already clear");
+        }
         return;
     }
 

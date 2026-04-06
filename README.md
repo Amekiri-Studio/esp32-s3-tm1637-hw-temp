@@ -43,6 +43,7 @@ WIFI SSID YourWiFiName
 WIFI PASS YourWiFiPassword
 WIFI CONNECT
 WIFI STATUS
+WIFI LOCK CLEAR
 WIFI CLEAR
 ```
 
@@ -61,6 +62,7 @@ WIFI CONNECT
 - `WIFI CONNECT`：开始连接；连接成功后会自动写入闪存
 - `WIFI STATUS`：查看当前 WiFi 状态、IP、是否已保存到闪存，以及 UDP 端口
 - `WIFI STATUS` 也会显示当前 WiFi sender lock 是否存在，以及 owner IP
+- `WIFI LOCK CLEAR`：手动释放当前 WiFi sender lock，让下一台主机可以立即接管
 - `WIFI CLEAR`：清除当前保存的 SSID/密码，删除闪存记录，并断开 WiFi
 
 ### 通过 Python 脚本配置 WiFi
@@ -88,6 +90,12 @@ python3 tools/send_cpu_temp.py --wifi-status
 
 ```bash
 python3 tools/send_cpu_temp.py --wifi-clear
+```
+
+手动释放当前 WiFi sender lock：
+
+```bash
+python3 tools/send_cpu_temp.py --wifi-lock-clear
 ```
 
 如果自动识别串口不准，也可以手动指定：

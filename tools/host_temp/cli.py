@@ -61,6 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wifi-pass", help="Configure the ESP32-S3 WiFi password over serial")
     parser.add_argument("--wifi-connect", action="store_true", help="Send `WIFI CONNECT` over serial and exit")
     parser.add_argument("--wifi-status", action="store_true", help="Send `WIFI STATUS` over serial and exit")
+    parser.add_argument("--wifi-lock-clear", action="store_true", help="Send `WIFI LOCK CLEAR` over serial and exit")
     parser.add_argument("--wifi-clear", action="store_true", help="Send `WIFI CLEAR` over serial and exit")
     return parser.parse_args()
 
@@ -103,7 +104,7 @@ def print_ports() -> int:
 
 
 def has_wifi_serial_action(args: argparse.Namespace) -> bool:
-    return any((args.wifi_ssid, args.wifi_pass, args.wifi_connect, args.wifi_status, args.wifi_clear))
+    return any((args.wifi_ssid, args.wifi_pass, args.wifi_connect, args.wifi_status, args.wifi_lock_clear, args.wifi_clear))
 
 
 def build_wifi_serial_commands(args: argparse.Namespace) -> list[str]:
@@ -118,6 +119,8 @@ def build_wifi_serial_commands(args: argparse.Namespace) -> list[str]:
         commands.append("WIFI CONNECT")
     if args.wifi_status:
         commands.append("WIFI STATUS")
+    if args.wifi_lock_clear:
+        commands.append("WIFI LOCK CLEAR")
     return commands
 
 
