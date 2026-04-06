@@ -61,6 +61,27 @@ class LineWriter(Protocol):
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
 
+class ReadableLinePort(LineWriter, Protocol):
+    def read_available_text(self) -> str: ...
+
+
+class SerialTemperatureSender:
+    def __init__(self, writer: LineWriter) -> None:
+        self._writer = writer
+
+    def send_temperature(self, text: str) -> None:
+        self._writer.write_line(text)
+
+    def close(self) -> None:
+        self._writer.close()
+
+    def __enter__(self) -> "SerialTemperatureSender":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+
 @dataclass(frozen=True)
 class SerialPortCandidate:
     device: str
@@ -83,6 +104,13 @@ class PySerialWriter:
 
     def close(self) -> None:
         self._serial.close()
+
+    def read_available_text(self) -> str:
+        available = getattr(self._serial, "in_waiting", 0)
+        if available <= 0:
+            return ""
+
+        return self._serial.read(available).decode("utf-8", errors="replace")
 
     def __enter__(self) -> "PySerialWriter":
         return self
@@ -220,6 +248,14 @@ class PosixSerialWriter:
     def close(self) -> None:
         os.close(self._fd)
 
+    def read_available_text(self) -> str:
+        try:
+            chunk = os.read(self._fd, 4096)
+        except BlockingIOError:
+            return ""
+
+        return chunk.decode("utf-8", errors="replace")
+
     def __enter__(self) -> "PosixSerialWriter":
         return self
 
@@ -237,3 +273,11 @@ def open_serial_writer(port: str, baud_rate: int) -> LineWriter:
     raise RuntimeError(
         "No cross-platform serial backend is available. Install pyserial with `python3 -m pip install pyserial`."
     )
+
+
+def open_serial_sender(port: str, baud_rate: int) -> SerialTemperatureSender:
+    return SerialTemperatureSender(open_serial_writer(port, baud_rate))
+
+
+def open_serial_reader_writer(port: str, baud_rate: int) -> ReadableLinePort:
+    return open_serial_writer(port, baud_rate)

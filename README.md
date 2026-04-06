@@ -4,6 +4,7 @@
 
 - `ESP32-S3` 通过串口接收主机发送的 CPU 温度
 - `ESP32-S3` 也可以通过串口接收 WiFi 配置命令并连接到局域网
+- `ESP32-S3` 在连上 WiFi 后，也可以通过局域网 UDP 接收主机发送的 CPU 温度
 - `TM1637` 四位数码管显示收到的整数温度
 - 串口监视器输出最近一次收到的温度值
 
@@ -13,9 +14,15 @@
 
 - 启动后，数码管先显示 `----`
 - 当主机通过串口发送一行温度值，例如 `48.25` 时，ESP32-S3 会解析该值并显示四舍五入后的整数
+- 当主机通过 WiFi UDP 发送一条温度文本，例如 `48.25` 时，ESP32-S3 也会解析并显示四舍五入后的整数
+- 当串口和 WiFi 都在发送温度时，显示优先级是“串口优先，WiFi 备用”
+- 只要最近 5 秒内收到过串口温度，就持续显示串口温度；串口超时后，才会回退显示最近的 WiFi 温度
 - 当通过串口完成 WiFi 连接后，数码管会短暂显示 `AAAA`
 - 如果当前已经连上 WiFi，但 5 秒内没有收到新温度，数码管会显示 `AAAA`
 - 如果 5 秒内没有收到新数据且 WiFi 未连接，数码管会显示 `----`
+- WiFi 连接成功后，会把当前 SSID/密码保存到 ESP32 闪存
+- 下次上电启动时，会自动读取上一次成功连接的 WiFi 并尝试重连
+- WiFi 温度接收默认使用 UDP 端口 `4210`
 
 ## WiFi 串口配置
 
@@ -23,7 +30,8 @@ WiFi 配置入口已经接入固件，当前仍然保留原来的串口温度输
 
 - 温度数据仍然可以继续按原样通过串口发送
 - WiFi 连接也通过同一个串口完成配置
-- 真正的“通过 WiFi 发送温度数据”可以在这个基础上继续接下一步，例如 UDP、TCP 或 HTTP
+- 当前已经接入“主机通过 WiFi UDP 发送温度数据”
+- 也可以直接用 Python 脚本通过串口配置 WiFi，而不必手动打开串口监视器
 
 可以在串口监视器里发送以下命令，每条命令一行：
 
@@ -48,9 +56,46 @@ WIFI CONNECT
 
 - `WIFI SSID ...`：设置 WiFi 名称
 - `WIFI PASS ...`：设置 WiFi 密码
-- `WIFI CONNECT`：开始连接
-- `WIFI STATUS`：查看当前 WiFi 状态和 IP
-- `WIFI CLEAR`：清除当前保存的 SSID/密码并断开 WiFi
+- `WIFI CONNECT`：开始连接；连接成功后会自动写入闪存
+- `WIFI STATUS`：查看当前 WiFi 状态、IP、是否已保存到闪存，以及 UDP 端口
+- `WIFI CLEAR`：清除当前保存的 SSID/密码，删除闪存记录，并断开 WiFi
+
+### 通过 Python 脚本配置 WiFi
+
+如果你不想手动打开串口监视器，也可以直接用 Python 脚本通过串口发送这些 WiFi 命令。
+
+设置 SSID、密码并立即连接：
+
+```bash
+python3 tools/send_cpu_temp.py \
+  --wifi-ssid YourWiFiName \
+  --wifi-pass YourWiFiPassword \
+  --wifi-connect
+```
+
+查看当前 WiFi 状态：
+
+```bash
+python3 tools/send_cpu_temp.py --wifi-status
+```
+
+这个命令会在发送 `WIFI STATUS` 后继续读取串口返回值，因此如果已经连网，终端里会直接看到 `WiFi IP: ...`。
+
+清除已保存的 WiFi：
+
+```bash
+python3 tools/send_cpu_temp.py --wifi-clear
+```
+
+如果自动识别串口不准，也可以手动指定：
+
+```bash
+python3 tools/send_cpu_temp.py \
+  --port /dev/ttyACM0 \
+  --wifi-ssid YourWiFiName \
+  --wifi-pass YourWiFiPassword \
+  --wifi-connect
+```
 
 ## 主机发送脚本
 
@@ -62,7 +107,8 @@ WIFI CONNECT
 - Linux 温度读取已实现
 - Windows 已接入 `LibreHardwareMonitor`
 - macOS 已接入 Apple Silicon 的 `macmon` CLI
-- 串口发送层是共用的，并支持自动识别 ESP32-S3 串口
+- 支持串口发送和 WiFi UDP 发送两种方式
+- 也支持通过串口发送 WiFi 管理命令
 
 ### 当前平台状态
 
@@ -96,10 +142,36 @@ python3 tools/send_cpu_temp.py
 
 默认会自动识别常见的 ESP32-S3 串口；如果同时存在多个不确定的串口，可以配合 `--list-ports` 查看后手动指定。
 
+### 通过 WiFi 发送温度到 ESP32-S3
+
+先在串口监视器中执行：
+
+```text
+WIFI STATUS
+```
+
+记下 ESP32-S3 的局域网 IP，然后在主机侧发送：
+
+```bash
+python3 tools/send_cpu_temp.py --transport wifi --wifi-host 192.168.1.123
+```
+
+如果你需要显式指定端口，也可以这样：
+
+```bash
+python3 tools/send_cpu_temp.py --transport wifi --wifi-host 192.168.1.123 --wifi-port 4210
+```
+
 ### 指定平台 provider
 
 ```bash
 python3 tools/send_cpu_temp.py --platform linux --port /dev/ttyACM0
+```
+
+通过 WiFi 发送时也可以和 provider 组合：
+
+```bash
+python3 tools/send_cpu_temp.py --platform linux --transport wifi --wifi-host 192.168.1.123
 ```
 
 ### Windows + LibreHardwareMonitor
