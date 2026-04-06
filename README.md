@@ -3,6 +3,7 @@
 这个项目现在的功能是：
 
 - `ESP32-S3` 通过串口接收主机发送的 CPU 温度
+- `ESP32-S3` 也可以通过串口接收 WiFi 配置命令并连接到局域网
 - `TM1637` 四位数码管显示收到的整数温度
 - 串口监视器输出最近一次收到的温度值
 
@@ -12,7 +13,44 @@
 
 - 启动后，数码管先显示 `----`
 - 当主机通过串口发送一行温度值，例如 `48.25` 时，ESP32-S3 会解析该值并显示四舍五入后的整数
-- 如果 5 秒内没有收到新数据，数码管会重新显示 `----`
+- 当通过串口完成 WiFi 连接后，数码管会短暂显示 `AAAA`
+- 如果当前已经连上 WiFi，但 5 秒内没有收到新温度，数码管会显示 `AAAA`
+- 如果 5 秒内没有收到新数据且 WiFi 未连接，数码管会显示 `----`
+
+## WiFi 串口配置
+
+WiFi 配置入口已经接入固件，当前仍然保留原来的串口温度输入能力。也就是说：
+
+- 温度数据仍然可以继续按原样通过串口发送
+- WiFi 连接也通过同一个串口完成配置
+- 真正的“通过 WiFi 发送温度数据”可以在这个基础上继续接下一步，例如 UDP、TCP 或 HTTP
+
+可以在串口监视器里发送以下命令，每条命令一行：
+
+```text
+WIFI HELP
+WIFI SSID YourWiFiName
+WIFI PASS YourWiFiPassword
+WIFI CONNECT
+WIFI STATUS
+WIFI CLEAR
+```
+
+推荐流程：
+
+```text
+WIFI SSID YourWiFiName
+WIFI PASS YourWiFiPassword
+WIFI CONNECT
+```
+
+说明：
+
+- `WIFI SSID ...`：设置 WiFi 名称
+- `WIFI PASS ...`：设置 WiFi 密码
+- `WIFI CONNECT`：开始连接
+- `WIFI STATUS`：查看当前 WiFi 状态和 IP
+- `WIFI CLEAR`：清除当前保存的 SSID/密码并断开 WiFi
 
 ## 主机发送脚本
 
