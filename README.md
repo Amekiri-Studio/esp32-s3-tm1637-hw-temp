@@ -17,6 +17,8 @@
 - 当主机通过 WiFi UDP 发送一条温度文本，例如 `48.25` 时，ESP32-S3 也会解析并显示四舍五入后的整数
 - 当串口和 WiFi 都在发送温度时，显示优先级是“串口优先，WiFi 备用”
 - 只要最近 5 秒内收到过串口温度，就持续显示串口温度；串口超时后，才会回退显示最近的 WiFi 温度
+- WiFi UDP 启用了“发送端独占锁”：第一个发来有效温度的主机拿到 owner 锁，锁有效期间只接受这个 IP 的温度
+- 如果当前 WiFi owner 超过 5 秒没有再发送有效温度，owner 锁会自动释放，下一台主机才可以接管
 - 当通过串口完成 WiFi 连接后，数码管会短暂显示 `AAAA`
 - 如果当前已经连上 WiFi，但 5 秒内没有收到新温度，数码管会显示 `AAAA`
 - 如果 5 秒内没有收到新数据且 WiFi 未连接，数码管会显示 `----`
@@ -58,6 +60,7 @@ WIFI CONNECT
 - `WIFI PASS ...`：设置 WiFi 密码
 - `WIFI CONNECT`：开始连接；连接成功后会自动写入闪存
 - `WIFI STATUS`：查看当前 WiFi 状态、IP、是否已保存到闪存，以及 UDP 端口
+- `WIFI STATUS` 也会显示当前 WiFi sender lock 是否存在，以及 owner IP
 - `WIFI CLEAR`：清除当前保存的 SSID/密码，删除闪存记录，并断开 WiFi
 
 ### 通过 Python 脚本配置 WiFi

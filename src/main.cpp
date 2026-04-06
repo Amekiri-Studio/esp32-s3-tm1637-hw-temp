@@ -52,6 +52,9 @@ bool hasPersistedWiFiCredentials = false;
 bool udpListenerRunning = false;
 bool hasSerialTemperature = false;
 bool hasWiFiTemperature = false;
+bool hasWiFiOwnerLock = false;
+IPAddress wifiOwnerIp;
+unsigned long wifiOwnerLastSeenMs = 0;
 
 enum ActiveTemperatureSource {
     ACTIVE_TEMPERATURE_SOURCE_NONE,
@@ -231,16 +234,47 @@ bool loadSavedWiFiCredentials() {
 }
 
 void printWiFiStatus() {
+    unsigned long now = millis();
     wl_status_t status = WiFi.status();
     Serial.printf("WiFi status: %s\n", wifiStatusToString(status));
     Serial.printf("Stored SSID: %s\n", wifiSsid[0] == '\0' ? "<empty>" : wifiSsid);
     Serial.printf("Stored password: %s\n", wifiPassword[0] == '\0' ? "<empty>" : "<set>");
     Serial.printf("Saved to flash: %s\n", hasPersistedWiFiCredentials ? "yes" : "no");
     Serial.printf("WiFi UDP port: %u\n", WIFI_UDP_PORT);
+    if (hasWiFiOwnerLock && now - wifiOwnerLastSeenMs <= DATA_TIMEOUT_MS) {
+        Serial.printf("WiFi sender lock: %s (expires in %lu ms)\n",
+                      wifiOwnerIp.toString().c_str(),
+                      DATA_TIMEOUT_MS - (now - wifiOwnerLastSeenMs));
+    } else {
+        Serial.println("WiFi sender lock: <unlocked>");
+    }
 
     if (status == WL_CONNECTED) {
         String ipAddress = WiFi.localIP().toString();
         Serial.printf("WiFi IP: %s\n", ipAddress.c_str());
+    }
+}
+
+void clearWiFiOwnerLock(const char *reason) {
+    if (!hasWiFiOwnerLock) {
+        return;
+    }
+
+    Serial.printf("Released WiFi sender lock for %s (%s)\n",
+                  wifiOwnerIp.toString().c_str(),
+                  reason);
+    hasWiFiOwnerLock = false;
+    wifiOwnerIp = IPAddress();
+    wifiOwnerLastSeenMs = 0;
+}
+
+void refreshWiFiOwnerLock() {
+    if (!hasWiFiOwnerLock) {
+        return;
+    }
+
+    if (millis() - wifiOwnerLastSeenMs > DATA_TIMEOUT_MS) {
+        clearWiFiOwnerLock("timeout");
     }
 }
 
@@ -319,6 +353,7 @@ void stopUdpListener() {
 
     udpReceiver.stop();
     udpListenerRunning = false;
+    clearWiFiOwnerLock("listener stopped");
     Serial.println("WiFi UDP listener stopped");
 }
 
@@ -461,8 +496,25 @@ bool readTemperatureFromWiFi(float *tempC) {
         return false;
     }
 
+    refreshWiFiOwnerLock();
+
     int packetSize = udpReceiver.parsePacket();
     if (packetSize <= 0) {
+        return false;
+    }
+
+    IPAddress remoteIp = udpReceiver.remoteIP();
+    uint16_t remotePort = udpReceiver.remotePort();
+
+    if (hasWiFiOwnerLock && remoteIp != wifiOwnerIp) {
+        while (udpReceiver.available() > 0) {
+            udpReceiver.read();
+        }
+
+        Serial.printf("Ignoring WiFi temperature from %s:%u because sender lock is held by %s\n",
+                      remoteIp.toString().c_str(),
+                      remotePort,
+                      wifiOwnerIp.toString().c_str());
         return false;
     }
 
@@ -484,12 +536,19 @@ bool readTemperatureFromWiFi(float *tempC) {
     }
 
     if (!parseTemperatureLine(line, tempC)) {
-        IPAddress remoteIp = udpReceiver.remoteIP();
         Serial.printf("Ignoring invalid WiFi payload from %s:%u\n",
                       remoteIp.toString().c_str(),
-                      udpReceiver.remotePort());
+                      remotePort);
         return false;
     }
+
+    if (!hasWiFiOwnerLock) {
+        wifiOwnerIp = remoteIp;
+        hasWiFiOwnerLock = true;
+        Serial.printf("Acquired WiFi sender lock for %s\n", wifiOwnerIp.toString().c_str());
+    }
+
+    wifiOwnerLastSeenMs = millis();
 
     return true;
 }
@@ -578,6 +637,7 @@ void loop() {
     }
 
     handleWiFiStatusChanges();
+    refreshWiFiOwnerLock();
     updateDisplayedTemperatureSource();
 
     refreshDisplay();
