@@ -4,6 +4,7 @@ import argparse
 import signal
 import time
 
+from .bluetooth_io import DEFAULT_BLUETOOTH_NAME, list_bluetooth_devices, open_bluetooth_sender
 from .network_io import open_udp_sender
 from .providers import get_provider
 from .providers.base import SensorCandidate
@@ -22,12 +23,12 @@ CONNECT_RESPONSE_TIMEOUT_SECONDS = 12.0
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Read the host CPU temperature and send it to the ESP32-S3 over serial or WiFi."
+        description="Read the host CPU temperature and send it to the ESP32-S3 over serial, WiFi, or Bluetooth."
     )
     parser.add_argument(
         "--transport",
         default="serial",
-        choices=("serial", "wifi"),
+        choices=("serial", "wifi", "bluetooth"),
         help="Transport used to send the temperature to the ESP32-S3",
     )
     parser.add_argument(
@@ -45,6 +46,17 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_WIFI_PORT,
         help=f"UDP port used by the ESP32-S3 for --transport wifi (default: {DEFAULT_WIFI_PORT})",
     )
+    parser.add_argument("--bluetooth-address", help="BLE device address/identifier for --transport bluetooth")
+    parser.add_argument(
+        "--bluetooth-name",
+        help=f"BLE device name for --transport bluetooth (default discovery name: {DEFAULT_BLUETOOTH_NAME})",
+    )
+    parser.add_argument(
+        "--bluetooth-scan-timeout",
+        type=float,
+        default=5.0,
+        help="Seconds used to scan for the BLE device before connecting",
+    )
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between temperature updates")
     parser.add_argument(
         "--sensor",
@@ -56,6 +68,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--list-sensors", action="store_true", help="Print detected temperature sensors and exit")
     parser.add_argument("--list-ports", action="store_true", help="Print detected serial ports and exit")
+    parser.add_argument("--list-bluetooth", action="store_true", help="Scan nearby BLE devices and exit")
     parser.add_argument("--dry-run", action="store_true", help="Print the detected temperature without opening the serial port")
     parser.add_argument("--wifi-ssid", help="Configure the ESP32-S3 WiFi SSID over serial")
     parser.add_argument("--wifi-pass", help="Configure the ESP32-S3 WiFi password over serial")
@@ -99,6 +112,23 @@ def print_ports() -> int:
             f"  score={port.score:>3}  {port.device:<20}  "
             f"[{port.detection_method}] {' | '.join(details)}"
         )
+
+    return 0
+
+
+def print_bluetooth_devices(scan_timeout: float) -> int:
+    devices = list_bluetooth_devices(scan_timeout=scan_timeout)
+    if not devices:
+        print("No BLE devices were found.")
+        return 1
+
+    print("Available BLE devices:")
+    for device in devices:
+        rssi_text = "n/a" if device.rssi is None else str(device.rssi)
+        line = f"  rssi={rssi_text:>4}  {device.name:<24}  {device.address}"
+        if device.details:
+            line = f"{line}  [{device.details}]"
+        print(line)
 
     return 0
 
@@ -196,9 +226,14 @@ def main() -> int:
             return 1
         return print_ports()
 
+    if args.list_bluetooth:
+        if args.transport == "serial" and args.port:
+            raise RuntimeError("`--port` cannot be combined with `--list-bluetooth`")
+        return print_bluetooth_devices(args.bluetooth_scan_timeout)
+
     if has_wifi_serial_action(args):
-        if args.list_sensors or args.dry_run:
-            raise RuntimeError("WiFi serial management commands cannot be combined with `--list-sensors` or `--dry-run`")
+        if args.list_sensors or args.list_bluetooth or args.dry_run:
+            raise RuntimeError("WiFi serial management commands cannot be combined with `--list-sensors`, `--list-bluetooth`, or `--dry-run`")
         return run_wifi_serial_actions(args)
 
     provider = get_provider(args.platform, lhm_dll_path=args.librehardwaremonitor_dll)
@@ -242,7 +277,7 @@ def main() -> int:
                     sender.send_temperature(payload)
                     print(f"Sent {payload} C over serial")
                     time.sleep(args.interval)
-        else:
+        elif args.transport == "wifi":
             if args.port:
                 raise RuntimeError("`--port` is only valid with --transport serial")
 
@@ -257,6 +292,30 @@ def main() -> int:
                     payload = f"{temp_c:.2f}"
                     sender.send_temperature(payload)
                     print(f"Sent {payload} C over WiFi to {args.wifi_host}:{args.wifi_port}")
+                    time.sleep(args.interval)
+        else:
+            if args.port:
+                raise RuntimeError("`--port` is only valid with --transport serial")
+
+            if args.wifi_host:
+                raise RuntimeError("`--wifi-host` is only valid with --transport wifi")
+
+            bluetooth_name = args.bluetooth_name or DEFAULT_BLUETOOTH_NAME
+            with open_bluetooth_sender(
+                address=args.bluetooth_address,
+                name=bluetooth_name,
+                scan_timeout=args.bluetooth_scan_timeout,
+            ) as sender:
+                if args.bluetooth_address:
+                    print(f"Sending BLE temperature updates to device address {args.bluetooth_address}")
+                else:
+                    print(f"Sending BLE temperature updates to device name {bluetooth_name}")
+
+                while not should_stop:
+                    temp_c = provider.read_celsius(sensor)
+                    payload = f"{temp_c:.2f}"
+                    sender.send_temperature(payload)
+                    print(f"Sent {payload} C over Bluetooth BLE")
                     time.sleep(args.interval)
 
         print("Stopped temperature sender")

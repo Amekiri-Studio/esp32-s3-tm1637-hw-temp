@@ -5,6 +5,7 @@
 - `ESP32-S3` 通过串口接收主机发送的 CPU 温度
 - `ESP32-S3` 也可以通过串口接收 WiFi 配置命令并连接到局域网
 - `ESP32-S3` 在连上 WiFi 后，也可以通过局域网 UDP 接收主机发送的 CPU 温度
+- `ESP32-S3` 也支持在蓝牙模式下通过 BLE 接收主机发送的 CPU 温度
 - `TM1637` 四位数码管显示收到的整数温度
 - 串口监视器输出最近一次收到的温度值
 
@@ -13,18 +14,25 @@
 固件代码位于 [src/main.cpp](src/main.cpp)。
 
 - 启动后，数码管先显示 `----`
+- 默认启动在 `WiFi` 模式，按一次 `BOOT` 键可切换到蓝牙模式，再按一次切回 `WiFi` 模式
 - 当主机通过串口发送一行温度值，例如 `48.25` 时，ESP32-S3 会解析该值并显示四舍五入后的整数
 - 当主机通过 WiFi UDP 发送一条温度文本，例如 `48.25` 时，ESP32-S3 也会解析并显示四舍五入后的整数
-- 当串口和 WiFi 都在发送温度时，显示优先级是“串口优先，WiFi 备用”
-- 只要最近 5 秒内收到过串口温度，就持续显示串口温度；串口超时后，才会回退显示最近的 WiFi 温度
+- 当主机通过 BLE 发送一条温度文本，例如 `48.25` 时，ESP32-S3 也会解析该值并显示四舍五入后的整数
+- 在 `WiFi` 模式下，当串口和 WiFi 都在发送温度时，显示优先级是“串口优先，WiFi 备用”
+- 在蓝牙模式下，当串口和 BLE 都在发送温度时，显示优先级是“串口优先，蓝牙备用”
+- 只要最近 5 秒内收到过串口温度，就持续显示串口温度；串口超时后，才会回退显示当前无线模式最近一次收到的温度
 - WiFi UDP 启用了“发送端独占锁”：第一个发来有效温度的主机拿到 owner 锁，锁有效期间只接受这个 IP 的温度
 - 如果当前 WiFi owner 超过 5 秒没有再发送有效温度，owner 锁会自动释放，下一台主机才可以接管
 - 当通过串口完成 WiFi 连接后，数码管会短暂显示 `AAAA`
 - 如果当前已经连上 WiFi，但 5 秒内没有收到新温度，数码管会显示 `AAAA`
 - 如果 5 秒内没有收到新数据且 WiFi 未连接，数码管会显示 `----`
+- 切换到蓝牙模式并进入配对广播时，数码管会短暂显示 `PPPP`
+- 蓝牙模式下，如果 BLE 未连接且不在刚进入配对广播的提示窗口内，数码管显示 `dddd`
+- 蓝牙模式下，如果 BLE 已连接但最近 5 秒没有收到新温度，数码管显示 `bbbb`
 - WiFi 连接成功后，会把当前 SSID/密码保存到 ESP32 闪存
 - 下次上电启动时，会自动读取上一次成功连接的 WiFi 并尝试重连
 - WiFi 温度接收默认使用 UDP 端口 `4210`
+- 蓝牙模式使用 BLE UART 风格的写入特征值，设备名默认为 `HWTempDisplay`
 
 ## WiFi 串口配置
 
@@ -118,7 +126,7 @@ python3 tools/send_cpu_temp.py \
 - Linux 温度读取已实现
 - Windows 已接入 `LibreHardwareMonitor`
 - macOS 已接入 Apple Silicon 的 `macmon` CLI
-- 支持串口发送和 WiFi UDP 发送两种方式
+- 支持串口发送、WiFi UDP 发送和 BLE 发送三种方式
 - 也支持通过串口发送 WiFi 管理命令
 
 ### 当前平台状态
@@ -137,6 +145,18 @@ python3 tools/send_cpu_temp.py --list-sensors
 
 ```bash
 python3 tools/send_cpu_temp.py --list-ports
+```
+
+### 查看检测到的蓝牙设备
+
+```bash
+python3 tools/send_cpu_temp.py --list-bluetooth
+```
+
+如果需要更长一点的扫描时间，也可以这样：
+
+```bash
+python3 tools/send_cpu_temp.py --list-bluetooth --bluetooth-scan-timeout 8
 ```
 
 ### 只在终端打印温度，不发送到串口
@@ -173,6 +193,34 @@ python3 tools/send_cpu_temp.py --transport wifi --wifi-host 192.168.1.123
 python3 tools/send_cpu_temp.py --transport wifi --wifi-host 192.168.1.123 --wifi-port 4210
 ```
 
+### 通过蓝牙发送温度到 ESP32-S3
+
+先按一次开发板上的 `BOOT` 键，把固件切到蓝牙模式。切换后会先显示一小段时间 `PPPP`，等待配对时显示 `dddd`。
+
+主机侧建议先安装 `bleak`：
+
+```bash
+python3 -m pip install bleak
+```
+
+默认会按设备名 `HWTempDisplay` 扫描并连接：
+
+```bash
+python3 tools/send_cpu_temp.py --transport bluetooth
+```
+
+如果你想显式指定 BLE 名称：
+
+```bash
+python3 tools/send_cpu_temp.py --transport bluetooth --bluetooth-name HWTempDisplay
+```
+
+如果你已经知道设备地址或系统分配的 BLE identifier，也可以直接指定：
+
+```bash
+python3 tools/send_cpu_temp.py --transport bluetooth --bluetooth-address YOUR_DEVICE_ID
+```
+
 ### 指定平台 provider
 
 ```bash
@@ -183,6 +231,12 @@ python3 tools/send_cpu_temp.py --platform linux --port /dev/ttyACM0
 
 ```bash
 python3 tools/send_cpu_temp.py --platform linux --transport wifi --wifi-host 192.168.1.123
+```
+
+通过蓝牙发送时也可以和 provider 组合：
+
+```bash
+python3 tools/send_cpu_temp.py --platform linux --transport bluetooth
 ```
 
 ### Windows + LibreHardwareMonitor
