@@ -30,6 +30,8 @@ constexpr unsigned int WIFI_UDP_PORT = 4210;
 constexpr char WIFI_PREFS_NAMESPACE[] = "wifi";
 constexpr char WIFI_PREFS_SSID_KEY[] = "ssid";
 constexpr char WIFI_PREFS_PASS_KEY[] = "pass";
+constexpr char STATE_PREFS_NAMESPACE[] = "state";
+constexpr char STATE_PREFS_MODE_KEY[] = "mode";
 constexpr char BLE_DEVICE_NAME[] = "HWTempDisplay";
 constexpr char BLE_SERVICE_UUID[] = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 constexpr char BLE_CHARACTERISTIC_UUID_RX[] = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -80,6 +82,7 @@ enum TemperatureTransport {
 
 TM1637Display display(CLK, DIO);
 Preferences preferences;
+Preferences statePreferences;
 WiFiUDP udpReceiver;
 BLEServer *bleServer = nullptr;
 BLECharacteristic *bleRxCharacteristic = nullptr;
@@ -333,6 +336,40 @@ bool openWiFiPreferences(bool readOnly) {
 
     Serial.println("Failed to open WiFi credential storage");
     return false;
+}
+
+bool openStatePreferences(bool readOnly) {
+    if (statePreferences.begin(STATE_PREFS_NAMESPACE, readOnly)) {
+        return true;
+    }
+
+    Serial.println("Failed to open wireless mode storage");
+    return false;
+}
+
+void saveWirelessModeToFlash(WirelessMode mode) {
+    if (!openStatePreferences(false)) {
+        return;
+    }
+
+    statePreferences.putUChar(STATE_PREFS_MODE_KEY, static_cast<uint8_t>(mode));
+    statePreferences.end();
+    Serial.printf("Saved wireless mode to flash: %s\n", wirelessModeToString(mode));
+}
+
+WirelessMode loadSavedWirelessMode() {
+    if (!openStatePreferences(false)) {
+        return WIRELESS_MODE_WIFI;
+    }
+
+    uint8_t savedMode = statePreferences.getUChar(STATE_PREFS_MODE_KEY, static_cast<uint8_t>(WIRELESS_MODE_WIFI));
+    statePreferences.end();
+
+    if (savedMode == static_cast<uint8_t>(WIRELESS_MODE_BLUETOOTH)) {
+        return WIRELESS_MODE_BLUETOOTH;
+    }
+
+    return WIRELESS_MODE_WIFI;
 }
 
 void saveWiFiCredentialsToFlash() {
@@ -683,12 +720,14 @@ void toggleWirelessMode() {
     if (wirelessMode == WIRELESS_MODE_WIFI) {
         Serial.println("BOOT pressed, switching wireless mode to Bluetooth");
         activateBluetoothMode();
+        saveWirelessModeToFlash(wirelessMode);
         return;
     }
 
     Serial.println("BOOT pressed, switching wireless mode to WiFi");
     stopBluetoothMode();
     activateWiFiMode(true);
+    saveWirelessModeToFlash(wirelessMode);
 }
 
 void processWiFiCommand(char *commandText) {
@@ -978,7 +1017,13 @@ void setup() {
         Serial.println("No saved WiFi credentials found in flash");
     }
 
-    activateWiFiMode(true);
+    WirelessMode startupMode = loadSavedWirelessMode();
+    Serial.printf("Loaded wireless startup mode from flash: %s\n", wirelessModeToString(startupMode));
+    if (startupMode == WIRELESS_MODE_BLUETOOTH) {
+        activateBluetoothMode();
+    } else {
+        activateWiFiMode(true);
+    }
 
     // Some TM1637 boards ignore the first commands after a cold power-on.
     delay(DISPLAY_STARTUP_DELAY_MS);
